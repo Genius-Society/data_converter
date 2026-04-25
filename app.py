@@ -199,4 +199,4 @@ if __name__ == "__main__":
                     ```"""
                 )
 
-    data.launch(css="#gradio-share-link-button-0 { display: none; }")
+    data.launch(css="#gradio-share-link-button-0 { display: none; }", ssr_mode=False)
