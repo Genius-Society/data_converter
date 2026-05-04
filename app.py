@@ -1,22 +1,23 @@
+import os
 import csv
 import json
+import shutil
 import gradio as gr
 import pandas as pd
-from utils import clean_dir, TMP_DIR, EN_US
 
-
-MODE = {"from": "jsonl", "to": "csv"}
+EN_US = os.getenv("LANG") != "zh_CN.UTF-8"
+TMP_DIR = os.path.join(os.path.dirname(__file__), "__pycache__")
 ZH2EN = {
     "模式": "Mode",
-    "上传原数据": "Upload input file",
     "转换": "Convert",
-    "下载转换数据": "Download output file",
+    "状态栏": "Status",
     "数据预览": "Data viewer",
+    "上传原数据": "Upload input file",
+    "下载转换数据": "Download output file",
+    "数据文件转换": "Data Format Converter",
+    "支持的 CSV 格式": "Supported CSV format",
     "支持的 JSON 格式": "Supported JSON format",
     "支持的 JSON Lines 格式": "Supported jsonl format",
-    "支持的 CSV 格式": "Supported CSV format",
-    "状态栏": "Status",
-    "# 数据文件转换": "# Data Format Converter",
 }
 
 
@@ -91,26 +92,27 @@ def decoder_jsonl(data_list: list, file_path: str):
     return file_path
 
 
-def change_mode(input: str):
-    global MODE
-    affix = input.split(" ")
-    if affix[1] == "→":
-        MODE["from"] = affix[0]
-        MODE["to"] = affix[2]
+def clean_dir(dir_path: str):
+    if os.path.exists(dir_path):
+        shutil.rmtree(dir_path)
 
-    else:
-        MODE["from"] = affix[2]
-        MODE["to"] = affix[0]
+    os.makedirs(dir_path)
 
 
 # outer func
-def infer(input_file: str, cache=f"{TMP_DIR}/data"):
+def infer(input_file: str, mode: str, cache=TMP_DIR):
     status = "Success"
     output_file = previews = None
     try:
         clean_dir(cache)
-        src_fmt = MODE["from"]
-        dst_fmt = MODE["to"]
+        if " → " in mode:
+            src_fmt = mode.split(" → ")[0]
+            dst_fmt = mode.split(" → ")[-1]
+
+        else:
+            src_fmt = mode.split(" ← ")[-1]
+            dst_fmt = mode.split(" ← ")[0]
+
         data_list = eval(f"encoder_{src_fmt}")(input_file)
         output_file = eval(f"decoder_{dst_fmt}")(data_list, f"{cache}/output.{dst_fmt}")
         previews = pd.DataFrame(data_list)
@@ -121,13 +123,12 @@ def infer(input_file: str, cache=f"{TMP_DIR}/data"):
     return status, output_file, previews
 
 
-if __name__ == "__main__":
-    tab_cfgs = ["jsonl ⇆ csv", "json ⇆ csv", "json ⇆ jsonl"]
-    with gr.Blocks() as data:
-        gr.Markdown(_L("# 数据文件转换"))
+def main(tab_cfgs: list[str] = ["jsonl ⇆ csv", "json ⇆ csv", "json ⇆ jsonl"]):
+    with gr.Blocks() as demo:
+        gr.Markdown("<h1 style='text-align: center;'>" + _L("数据文件转换") + "</h1>")
         for item in tab_cfgs:
             types = item.split(" ⇆ ")
-            with gr.Tab(item) as tab:
+            with gr.Tab(item):
                 with gr.Row():
                     with gr.Column():
                         option = gr.Dropdown(
@@ -150,53 +151,50 @@ if __name__ == "__main__":
                         output_file = gr.File(type="filepath", label=_L("下载转换数据"))
                         data_viewer = gr.Dataframe(label=_L("数据预览"))
 
-            option.change(change_mode, inputs=option)
-            tab.select(change_mode, inputs=option)
             convert_btn.click(
                 infer,
-                inputs=input_file,
+                inputs=[input_file, option],
                 outputs=[status_bar, output_file, data_viewer],
             )
 
         with gr.Row():
             with gr.Column():
-                gr.Markdown(
-                    f"""
-                    ## {_L('支持的 JSON Lines 格式')}
-                    ```
-                    {{"key1": "val11", "key2": "val12", ...}}
-                    {{"key1": "val21", "key2": "val22", ...}}
-                    ...
-                    ```    
-                    ## {_L('支持的 CSV 格式')}
-                    ```
-                    key1, key2, ...
-                    val11, val12, ...
-                    val21, val22, ...
-                    ...
-                    ```
-                    """
-                )
+                gr.Markdown(f"""
+                        ## {_L('支持的 JSON Lines 格式')}
+                        ```
+                        {{"key1": "val11", "key2": "val12", ...}}
+                        {{"key1": "val21", "key2": "val22", ...}}
+                        ...
+                        ```    
+                        ## {_L('支持的 CSV 格式')}
+                        ```
+                        key1, key2, ...
+                        val11, val12, ...
+                        val21, val22, ...
+                        ...
+                        ```
+                        """)
 
             with gr.Column():
-                gr.Markdown(
-                    f"""
-                    ## {_L('支持的 JSON 格式')}
-                    ```
-                    [
-                        {{
-                            "key1": "val11",
-                            "key2": "val12",
+                gr.Markdown(f"""
+                        ## {_L('支持的 JSON 格式')}
+                        ```
+                        [
+                            {{
+                                "key1": "val11",
+                                "key2": "val12",
+                                ...
+                            }},
+                            {{
+                                "key1": "val21",
+                                "key2": "val22",
+                                ...
+                            }},
                             ...
-                        }},
-                        {{
-                            "key1": "val21",
-                            "key2": "val22",
-                            ...
-                        }},
-                        ...
-                    ]
-                    ```"""
-                )
+                        ]
+                        ```""")
+    return demo
 
-    data.launch(css="#gradio-share-link-button-0 { display: none; }", ssr_mode=False)
+
+if __name__ == "__main__":
+    main().launch(css="#gradio-share-link-button-0 { display: none; }", ssr_mode=False)
